@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sticky Stack Parallax</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Segoe UI', sans-serif;
+  }
+
+  /* Fixed Navbar */
+  nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 70px;
+    background: #111;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    padding: 0 40px;
+    font-size: 20px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    z-index: 999; /* always on top of every section */
+  }
+
+  /* Push first section below navbar so it doesn't hide under it initially */
+  .spacer {
+    height: 70px;
+  }
+
+  section {
+    position: sticky;
+    top: 70px;            /* sits right below navbar instead of hiding behind it */
+    width: 100%;
+    height: calc(100vh - 70px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 3rem;
+    color: #fff;
+    font-weight: 700;
+  }
+
+  /* Each next section needs a higher stacking order so it slides OVER the previous one */
+  section:nth-of-type(1) { background: #e63946; z-index: 1; }
+  section:nth-of-type(2) { background: #1d3557; z-index: 2; }
+  section:nth-of-type(3) { background: #2a9d8f; z-index: 3; }
+  section:nth-of-type(4) { background: #f4a261; z-index: 4; }
+  section:nth-of-type(5) { background: #6a4c93; z-index: 5; }
+
+  /* X-ray style mouse-following circle */
+  .cursor {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 40px;
+    height: 40px;
+    background: #fff;
+    border-radius: 50%;
+    pointer-events: none;        /* never blocks real clicks/hovers */
+    mix-blend-mode: difference;  /* THIS is what creates the x-ray / invert look */
+    z-index: 9999;
+    transform: translate(-50%, -50%);
+    transition: width 0.25s ease, height 0.25s ease;
+  }
+
+  /* grows bigger over text/nav for a stronger x-ray feel */
+  .cursor.hovering {
+    width: 90px;
+    height: 90px;
+  }
+
+  .img-section {
+    position: relative;
+    padding: 0;
+    background: #333; /* visible fallback even if image fails to load */
+  }
+  .img-section img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  body { cursor: none; } /* hide default cursor, our circle replaces it */
+</style>
+</head>
+<body>
+
+  <div class="cursor" id="cursor"></div>
+
+  <nav>MyBrand</nav>
+  <div class="spacer"></div>
+
+  <section><h1>Section 1</h1></section>
+  <section><h1>Section 2</h1></section>
+  <section><h1>Section 3</h1></section>
+  <section><h1>Section 4</h1></section>
+  <section class="img-section">
+    <img src="https://images.unsplash.com/photo-1611004061856-ccc3cbe944b2?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" alt="demo"
+         onerror="this.style.display='none'; this.insertAdjacentHTML('afterend', '<h1>Image failed to load — check your internet</h1>')">
+  </section>
+
+<script>
+  const cursor = document.getElementById('cursor');
+
+  // Circle position (with slight lag for smooth "following" feel)
+  let mouseX = 0, mouseY = 0;
+  let circleX = 0, circleY = 0;
+  const speed = 0.15; // lower = more lag/smoothness
+
+  document.addEventListener('mousemove', (e) => {
+    mouseX = e.clientX;
+    mouseY = e.clientY;
+  });
+
+  function animate() {
+    // lerp (linear interpolation) for smooth trailing motion
+    circleX += (mouseX - circleX) * speed;
+    circleY += (mouseY - circleY) * speed;
+    cursor.style.left = circleX + 'px';
+    cursor.style.top = circleY + 'px';
+    requestAnimationFrame(animate);
+  }
+  animate();
+
+  // Grow the circle whenever it's over nav, a section, or any text/heading
+  const hoverTargets = document.querySelectorAll('nav, section, h1, h2, h3, p, a, button');
+  hoverTargets.forEach(el => {
+    el.addEventListener('mouseenter', () => cursor.classList.add('hovering'));
+    el.addEventListener('mouseleave', () => cursor.classList.remove('hovering'));
+  });
+</script>
+
+</body>
+</html>
