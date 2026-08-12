@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Particle Image Reveal Effect</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0a0a0a;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    font-family: 'Segoe UI', sans-serif;
+  }
+
+  .wrapper {
+    position: relative;
+    text-align: center;
+  }
+
+  canvas {
+    background: #0a0a0a;
+    border-radius: 8px;
+    cursor: none;
+  }
+
+  .hint {
+    color: #888;
+    margin-top: 16px;
+    font-size: 14px;
+    letter-spacing: 1px;
+  }
+
+  .loading {
+    color: #fff;
+    font-size: 18px;
+  }
+</style>
+</head>
+<body>
+
+  <div class="wrapper">
+    <div id="loadingText" class="loading">Loading image...</div>
+    <canvas id="canvas" style="display:none;"></canvas>
+    <div class="hint">Move your mouse over the image — particles scatter to reveal the picture beneath</div>
+  </div>
+
+<script>
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const loadingText = document.getElementById('loadingText');
+
+  // ---- CONFIG ----
+  const IMG_SRC = 'https://picsum.photos/id/1005/700/700'; // change this to any image URL
+  const PARTICLE_GAP = 4;      // spacing between particles (smaller = more detail, slower)
+  const MOUSE_RADIUS = 80;     // how far the "push" effect reaches
+  const PUSH_STRENGTH = 6;     // how hard particles get pushed away
+  const RETURN_SPEED = 0.08;   // how fast particles ease back to original spot
+  const FRICTION = 0.92;       // velocity damping
+
+  let particles = [];
+  let mouse = { x: -9999, y: -9999 };
+
+  class Particle {
+    constructor(x, y, color) {
+      this.originX = x;
+      this.originY = y;
+      this.x = x;
+      this.y = y;
+      this.vx = 0;
+      this.vy = 0;
+      this.color = color;
+      this.size = PARTICLE_GAP * 0.9;
+    }
+
+    update() {
+      // distance from mouse
+      const dx = this.x - mouse.x;
+      const dy = this.y - mouse.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist < MOUSE_RADIUS) {
+        // push particle away from mouse (creates the "reveal" gap)
+        const force = (MOUSE_RADIUS - dist) / MOUSE_RADIUS;
+        const angle = Math.atan2(dy, dx);
+        this.vx += Math.cos(angle) * force * PUSH_STRENGTH;
+        this.vy += Math.sin(angle) * force * PUSH_STRENGTH;
+      }
+
+      // ease back toward original position (spring effect)
+      const homeX = (this.originX - this.x) * RETURN_SPEED;
+      const homeY = (this.originY - this.y) * RETURN_SPEED;
+      this.vx += homeX;
+      this.vy += homeY;
+
+      // friction so it doesn't oscillate forever
+      this.vx *= FRICTION;
+      this.vy *= FRICTION;
+
+      this.x += this.vx;
+      this.y += this.vy;
+    }
+
+    draw() {
+      ctx.fillStyle = this.color;
+      ctx.fillRect(this.x, this.y, this.size, this.size);
+    }
+  }
+
+  function initParticles(img) {
+    canvas.width = img.width;
+    canvas.height = img.height;
+
+    // draw image to a temp canvas to read pixel colors
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = img.width;
+    tempCanvas.height = img.height;
+    const tempCtx = tempCanvas.getContext('2d');
+    tempCtx.drawImage(img, 0, 0);
+    const imageData = tempCtx.getImageData(0, 0, img.width, img.height).data;
+
+    particles = [];
+    for (let y = 0; y < img.height; y += PARTICLE_GAP) {
+      for (let x = 0; x < img.width; x += PARTICLE_GAP) {
+        const index = (y * img.width + x) * 4;
+        const r = imageData[index];
+        const g = imageData[index + 1];
+        const b = imageData[index + 2];
+        const alpha = imageData[index + 3];
+
+        // skip fully transparent pixels
+        if (alpha > 50) {
+          const color = `rgb(${r},${g},${b})`;
+          particles.push(new Particle(x, y, color));
+        }
+      }
+    }
+
+    loadingText.style.display = 'none';
+    canvas.style.display = 'block';
+    animate();
+  }
+
+  function animate() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (const p of particles) {
+      p.update();
+      p.draw();
+    }
+    requestAnimationFrame(animate);
+  }
+
+  canvas.addEventListener('mousemove', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    mouse.x = e.clientX - rect.left;
+    mouse.y = e.clientY - rect.top;
+  });
+
+  canvas.addEventListener('mouseleave', () => {
+    mouse.x = -9999;
+    mouse.y = -9999;
+  });
+
+  // touch support
+  canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const touch = e.touches[0];
+    mouse.x = touch.clientX - rect.left;
+    mouse.y = touch.clientY - rect.top;
+  }, { passive: false });
+
+  canvas.addEventListener('touchend', () => {
+    mouse.x = -9999;
+    mouse.y = -9999;
+  });
+
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => initParticles(img);
+  img.onerror = () => {
+    loadingText.textContent = 'Image failed to load — check your internet or replace IMG_SRC in the script.';
+  };
+  img.src = IMG_SRC;
+</script>
+
+</body>
+</html>
