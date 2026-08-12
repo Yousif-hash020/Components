@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Circle Expand Reveal Transition</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Segoe UI', sans-serif;
+    background: #000;
+  }
+
+  /* ---- Intro section (background layer, stays visible until the circle covers it) ---- */
+  .intro {
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #1d3557;
+    color: #fff;
+    font-size: 2rem;
+    text-align: center;
+    padding: 20px;
+  }
+
+  /* ---- Tall wrapper controls how much scroll distance the circle takes to expand ---- */
+  .circle-wrapper {
+    position: relative;
+    height: 300vh; /* bigger = slower, longer circle-grow scroll */
+  }
+
+  /* ---- Sticky pins both layers on screen while the wrapper scrolls past ---- */
+  .circle-sticky {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    width: 100%;
+    overflow: hidden;
+  }
+
+  /* Background layer visible through/around the circle before it fully expands */
+  .bg-layer {
+    position: absolute;
+    inset: 0;
+    background: #1d3557;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 1.6rem;
+    text-align: center;
+  }
+
+  /* The circle itself: starts tiny, clip-path grows until it covers the whole screen */
+  .circle-layer {
+    position: absolute;
+    inset: 0;
+    background: #e63946;
+    clip-path: circle(0px at 50% 50%);
+    will-change: clip-path;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* content that lives INSIDE the circle */
+  .circle-content {
+    max-width: 600px;
+    padding: 20px;
+    text-align: center;
+    color: #fff;
+  }
+
+  .circle-content h1 {
+    font-size: 2.5rem;
+    margin-bottom: 16px;
+  }
+
+  .circle-content p {
+    font-size: 1.1rem;
+    opacity: 0.9;
+    margin-bottom: 24px;
+  }
+
+  .circle-content .cards {
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .circle-content .card {
+    background: rgba(255,255,255,0.15);
+    border-radius: 10px;
+    padding: 16px 20px;
+    font-size: 0.95rem;
+    backdrop-filter: blur(4px);
+  }
+
+  /* ---- Next page that continues normally after the circle fully covers the screen ---- */
+  .next-page {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: #f4a261;
+    color: #111;
+    text-align: center;
+    padding: 20px;
+  }
+
+  .next-page h1 { font-size: 3rem; margin-bottom: 16px; }
+  .next-page p { font-size: 1.1rem; max-width: 500px; opacity: 0.85; }
+</style>
+</head>
+<body>
+
+  <div class="intro">
+    <p>Scroll down ↓<br>Watch a small circle expand and reveal new content</p>
+  </div>
+
+  <div class="circle-wrapper" id="circleWrapper">
+    <div class="circle-sticky">
+      <div class="bg-layer">Keep scrolling...</div>
+
+      <div class="circle-layer" id="circleLayer">
+        <div class="circle-content">
+          <h1>Inside the Circle</h1>
+          <p>These are new elements that only appear once the circle has expanded enough to contain them.</p>
+          <div class="cards">
+            <div class="card">Feature One</div>
+            <div class="card">Feature Two</div>
+            <div class="card">Feature Three</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="next-page">
+    <h1>Next Section</h1>
+    <p>Once the circle fully covers the screen, scrolling continues naturally into this section — normal page flow, no extra JS needed here.</p>
+  </div>
+
+<script>
+  const circleWrapper = document.getElementById('circleWrapper');
+  const circleLayer = document.getElementById('circleLayer');
+
+  function clamp(val, min, max) {
+    return Math.max(min, Math.min(max, val));
+  }
+
+  function updateCircle() {
+    const rect = circleWrapper.getBoundingClientRect();
+    const scrollableDistance = rect.height - window.innerHeight;
+
+    // progress goes 0 -> 1 exactly while this section is pinned on screen
+    const progress = clamp(-rect.top / scrollableDistance, 0, 1);
+
+    // max radius needed to fully cover the screen from the center = distance to a corner
+    const maxRadius = Math.sqrt(
+      Math.pow(window.innerWidth / 2, 2) + Math.pow(window.innerHeight / 2, 2)
+    );
+
+    const radius = progress * maxRadius;
+    circleLayer.style.clipPath = `circle(${radius}px at 50% 50%)`;
+
+    requestAnimationFrame(updateCircle);
+  }
+
+  requestAnimationFrame(updateCircle);
+</script>
+
+</body>
+</html>

@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dragon Smoke Reveal Effect</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0a0a0a;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    font-family: 'Segoe UI', sans-serif;
+  }
+
+  .stage {
+    position: relative;
+    width: 600px;
+    max-width: 90vw;
+    aspect-ratio: 1 / 1;
+    border-radius: 12px;
+    overflow: hidden;
+    cursor: none;
+    background: #111;
+  }
+
+  .stage img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .stage canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+  }
+
+  .hint {
+    color: #888;
+    margin-top: 16px;
+    font-size: 14px;
+    letter-spacing: 1px;
+    text-align: center;
+    max-width: 600px;
+  }
+
+  .loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-size: 16px;
+    background: #111;
+    z-index: 5;
+  }
+</style>
+</head>
+<body>
+
+  <div class="stage" id="stage">
+    <div class="loading" id="loadingText">Loading image...</div>
+    <img id="photo" src="" alt="">
+    <canvas id="canvas"></canvas>
+  </div>
+  <div class="hint">Move your mouse — a dragon-shaped trail clears the smoke to reveal the photo, then smoke drifts back within ~1.2s</div>
+
+<script>
+  // ---- CONFIG ----
+  const IMG_SRC = 'https://picsum.photos/id/1005/600/600'; // <-- replace with your own image URL
+  const BLOB_COUNT = 55;          // ambient smoke blobs (base coverage)
+  const RADIUS_MIN = 70;
+  const RADIUS_MAX = 150;
+  const DRIFT_SPEED = 0.25;       // gentle constant smoke wandering speed
+  const RETURN_SECONDS = 1.2;     // how long smoke takes to fully return (0.5 - 2s range)
+
+  const SLASH_BASE_LENGTH = 160;  // minimum length of the cutting shape
+  const SLASH_SPEED_BOOST = 3.5;  // how much faster mouse movement stretches the slash
+  const SLASH_WIDTH = 46;         // thickness of the slash
+  const SLASH_WAVE_AMOUNT = 14;   // how uneven/jagged the edges are
+  const CUT_COLOR = 'rgba(255,255,255,1)'; // color of the reveal stamp — only its ALPHA matters for masking
+
+  const stage = document.getElementById('stage');
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  const photo = document.getElementById('photo');
+  const loadingText = document.getElementById('loadingText');
+
+  let blobs = [];
+  let mouse = { x: -9999, y: -9999 };
+  let prevMouse = { x: -9999, y: -9999 };
+  let width, height, dpr;
+  let frameTime = 0;
+
+  // offscreen canvas used purely as an alpha "reveal mask" that fades over time
+  let revealCanvas, revealCtx;
+  let decayAlpha; // computed per-frame fade amount so mask returns to 0 within RETURN_SECONDS
+
+  // Draws a long, wavy, uneven blob (like a slash/cut mark) at (cx, cy),
+  // stretched + rotated along the given angle, with jagged noisy edges.
+  function drawWavySlash(context, cx, cy, length, thickness, angle, time) {
+    const N = 24;
+    const pts = [];
+    for (let i = 0; i <= N; i++) {
+      const t = (i / N) * Math.PI * 2;
+      const rx = (length / 2) * Math.cos(t);
+      const ry = (thickness / 2) * Math.sin(t);
+
+      // layered sine noise so the outline is uneven/jagged, and gently animates over time
+      const noise =
+        Math.sin(t * 5 + time * 2.2) * SLASH_WAVE_AMOUNT +
+        Math.sin(t * 9 - time * 3.1) * (SLASH_WAVE_AMOUNT * 0.4);
+
+      const nx = Math.cos(t);
+      const ny = Math.sin(t);
+      pts.push([rx + nx * noise, ry + ny * noise]);
+    }
+
+    context.beginPath();
+    pts.forEach(([px, py], idx) => {
+      const rx2 = px * Math.cos(angle) - py * Math.sin(angle);
+      const ry2 = px * Math.sin(angle) + py * Math.cos(angle);
+      const x = cx + rx2;
+      const y = cy + ry2;
+      if (idx === 0) context.moveTo(x, y);
+      else context.lineTo(x, y);
+    });
+    context.closePath();
+    context.fill();
+  }
+
+  class SmokeBlob {
+    constructor() {
+      this.x = Math.random() * width;
+      this.y = Math.random() * height;
+      this.radius = RADIUS_MIN + Math.random() * (RADIUS_MAX - RADIUS_MIN);
+      this.angle = Math.random() * Math.PI * 2;
+      this.angleSpeed = (Math.random() - 0.5) * 0.02;
+      this.alpha = 0.9;
+    }
+
+    update() {
+      this.angle += this.angleSpeed;
+      this.x += Math.cos(this.angle) * DRIFT_SPEED;
+      this.y += Math.sin(this.angle) * DRIFT_SPEED;
+
+      const pad = this.radius;
+      if (this.x < -pad) this.x = width + pad;
+      if (this.x > width + pad) this.x = -pad;
+      if (this.y < -pad) this.y = height + pad;
+      if (this.y > height + pad) this.y = -pad;
+    }
+
+    draw() {
+      const gradient = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, this.radius);
+      gradient.addColorStop(0, `rgba(225,225,230,${this.alpha})`);
+      gradient.addColorStop(0.6, `rgba(210,210,215,${this.alpha * 0.7})`);
+      gradient.addColorStop(1, `rgba(200,200,205,0)`);
+      ctx.fillStyle = gradient;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function initSmoke() {
+    width = canvas.clientWidth;
+    height = canvas.clientHeight;
+    dpr = window.devicePixelRatio || 1;
+
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    ctx.scale(dpr, dpr);
+
+    // reveal mask canvas — tracks where the dragon has "cleared" the smoke
+    revealCanvas = document.createElement('canvas');
+    revealCanvas.width = width * dpr;
+    revealCanvas.height = height * dpr;
+    revealCtx = revealCanvas.getContext('2d');
+    revealCtx.scale(dpr, dpr);
+
+    // decay factor per frame so the mask fades to ~0 after RETURN_SECONDS (assuming ~60fps)
+    const fps = 60;
+    decayAlpha = 1 - Math.pow(0.05, 1 / (fps * RETURN_SECONDS));
+
+    blobs = [];
+    for (let i = 0; i < BLOB_COUNT; i++) blobs.push(new SmokeBlob());
+
+    loadingText.style.display = 'none';
+    animate();
+  }
+
+  function updateRevealMask() {
+    // fade existing cleared areas back toward "covered" (this is what makes smoke return over time)
+    revealCtx.save();
+    revealCtx.globalCompositeOperation = 'destination-out';
+    revealCtx.fillStyle = `rgba(0,0,0,${decayAlpha})`;
+    revealCtx.fillRect(0, 0, width, height);
+    revealCtx.restore();
+
+    // stamp a fresh wavy, uneven slash at the current mouse position,
+    // oriented and stretched along the direction of movement
+    if (mouse.x > -1000) {
+      const vx = mouse.x - prevMouse.x;
+      const vy = mouse.y - prevMouse.y;
+      const speed = Math.sqrt(vx * vx + vy * vy);
+      const angle = speed > 0.5 ? Math.atan2(vy, vx) : 0;
+      const length = SLASH_BASE_LENGTH + Math.min(speed * SLASH_SPEED_BOOST, 260);
+
+      revealCtx.save();
+      revealCtx.globalCompositeOperation = 'source-over';
+      revealCtx.fillStyle = CUT_COLOR;
+      drawWavySlash(revealCtx, mouse.x, mouse.y, length, SLASH_WIDTH, angle, frameTime);
+      revealCtx.restore();
+
+      prevMouse.x = mouse.x;
+      prevMouse.y = mouse.y;
+    }
+  }
+
+  function animate() {
+    frameTime += 0.016;
+    ctx.clearRect(0, 0, width, height);
+
+    // draw ambient smoke layer (always fully covering, drifting slowly)
+    for (const b of blobs) {
+      b.update();
+      b.draw();
+    }
+
+    // update the dragon-shaped reveal mask (stamps + time-based fade)
+    updateRevealMask();
+
+    // punch the dragon-shaped clear areas out of the smoke layer, exposing the photo beneath
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.drawImage(revealCanvas, 0, 0, width, height);
+    ctx.restore();
+
+    requestAnimationFrame(animate);
+  }
+
+  stage.addEventListener('mousemove', (e) => {
+    const rect = stage.getBoundingClientRect();
+    mouse.x = e.clientX - rect.left;
+    mouse.y = e.clientY - rect.top;
+  });
+
+  stage.addEventListener('mouseleave', () => {
+    mouse.x = -9999;
+    mouse.y = -9999;
+  });
+
+  stage.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    const rect = stage.getBoundingClientRect();
+    const touch = e.touches[0];
+    mouse.x = touch.clientX - rect.left;
+    mouse.y = touch.clientY - rect.top;
+  }, { passive: false });
+
+  stage.addEventListener('touchend', () => {
+    mouse.x = -9999;
+    mouse.y = -9999;
+  });
+
+  photo.onload = initSmoke;
+  photo.onerror = () => {
+    loadingText.textContent = 'Image failed to load — check your internet or replace IMG_SRC in the script.';
+  };
+  photo.src = IMG_SRC;
+</script>
+
+</body>
+</html>

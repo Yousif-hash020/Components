@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Particle Image Reveal Effect</title>
+<title>Smooth Particle Reveal (No Blur)</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -11,15 +11,11 @@
     background: #0a0a0a;
     height: 100vh;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     overflow: hidden;
     font-family: 'Segoe UI', sans-serif;
-  }
-
-  .wrapper {
-    position: relative;
-    text-align: center;
   }
 
   canvas {
@@ -37,17 +33,15 @@
 
   .loading {
     color: #fff;
-    font-size: 18px;
+    font-size: 16px;
   }
 </style>
 </head>
 <body>
 
-  <div class="wrapper">
-    <div id="loadingText" class="loading">Loading image...</div>
-    <canvas id="canvas" style="display:none;"></canvas>
-    <div class="hint">Move your mouse over the image — particles scatter to reveal the picture beneath</div>
-  </div>
+  <div id="loadingText" class="loading">Loading image...</div>
+  <canvas id="canvas" style="display:none;"></canvas>
+  <div class="hint">Move your mouse over the image — dust particles scatter away, no blur, no blocky pixels</div>
 
 <script>
   const canvas = document.getElementById('canvas');
@@ -55,12 +49,12 @@
   const loadingText = document.getElementById('loadingText');
 
   // ---- CONFIG ----
-  const IMG_SRC = 'https://picsum.photos/id/1005/700/700'; // change this to any image URL
-  const PARTICLE_GAP = 4;      // spacing between particles (smaller = more detail, slower)
-  const MOUSE_RADIUS = 80;     // how far the "push" effect reaches
-  const PUSH_STRENGTH = 6;     // how hard particles get pushed away
-  const RETURN_SPEED = 0.08;   // how fast particles ease back to original spot
-  const FRICTION = 0.92;       // velocity damping
+  const IMG_SRC = 'https://picsum.photos/id/1005/500/500'; // <-- replace with your own image URL
+  const PARTICLE_GAP = 3;      // spacing between particles (smaller = more detail, slower)
+  const DOT_SIZE = 1.8;        // radius of each dot
+  const MOUSE_RADIUS = 70;     // how far the "push" effect reaches
+  const PUSH_DISTANCE = 22;    // how far particles get pushed away (in px)
+  const EASE = 0.18;           // 0-1, higher = snappier/faster response, lower = smoother/slower
 
   let particles = [];
   let mouse = { x: -9999, y: -9999 };
@@ -71,87 +65,82 @@
       this.originY = y;
       this.x = x;
       this.y = y;
-      this.vx = 0;
-      this.vy = 0;
       this.color = color;
-      this.size = PARTICLE_GAP * 0.9;
     }
 
     update() {
-      // distance from mouse
-      const dx = this.x - mouse.x;
-      const dy = this.y - mouse.y;
+      const dx = this.originX - mouse.x;
+      const dy = this.originY - mouse.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
 
+      let targetX = this.originX;
+      let targetY = this.originY;
+
       if (dist < MOUSE_RADIUS) {
-        // push particle away from mouse (creates the "reveal" gap)
+        // push target away from mouse, proportional to how close the mouse is
         const force = (MOUSE_RADIUS - dist) / MOUSE_RADIUS;
         const angle = Math.atan2(dy, dx);
-        this.vx += Math.cos(angle) * force * PUSH_STRENGTH;
-        this.vy += Math.sin(angle) * force * PUSH_STRENGTH;
+        targetX = this.originX + Math.cos(angle) * force * PUSH_DISTANCE;
+        targetY = this.originY + Math.sin(angle) * force * PUSH_DISTANCE;
       }
 
-      // ease back toward original position (spring effect)
-      const homeX = (this.originX - this.x) * RETURN_SPEED;
-      const homeY = (this.originY - this.y) * RETURN_SPEED;
-      this.vx += homeX;
-      this.vy += homeY;
-
-      // friction so it doesn't oscillate forever
-      this.vx *= FRICTION;
-      this.vy *= FRICTION;
-
-      this.x += this.vx;
-      this.y += this.vy;
+      // simple smooth lerp toward target — no velocity/overshoot, so no jiggle
+      this.x += (targetX - this.x) * EASE;
+      this.y += (targetY - this.y) * EASE;
     }
 
     draw() {
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, DOT_SIZE, 0, Math.PI * 2);
       ctx.fillStyle = this.color;
-      ctx.fillRect(this.x, this.y, this.size, this.size);
+      ctx.fill();
     }
   }
 
   function initParticles(img) {
-    canvas.width = img.width;
-    canvas.height = img.height;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = img.width * dpr;
+    canvas.height = img.height * dpr;
+    canvas.style.width = img.width + 'px';
+    canvas.style.height = img.height + 'px';
+    ctx.scale(dpr, dpr);
 
-    // draw image to a temp canvas to read pixel colors
     const tempCanvas = document.createElement('canvas');
     tempCanvas.width = img.width;
     tempCanvas.height = img.height;
     const tempCtx = tempCanvas.getContext('2d');
-    tempCtx.drawImage(img, 0, 0);
+    tempCtx.drawImage(img, 0, 0, img.width, img.height);
     const imageData = tempCtx.getImageData(0, 0, img.width, img.height).data;
 
     particles = [];
     for (let y = 0; y < img.height; y += PARTICLE_GAP) {
       for (let x = 0; x < img.width; x += PARTICLE_GAP) {
-        const index = (y * img.width + x) * 4;
+        const px = Math.floor(x);
+        const py = Math.floor(y);
+        const index = (py * img.width + px) * 4;
         const r = imageData[index];
         const g = imageData[index + 1];
         const b = imageData[index + 2];
         const alpha = imageData[index + 3];
 
-        // skip fully transparent pixels
         if (alpha > 50) {
-          const color = `rgb(${r},${g},${b})`;
-          particles.push(new Particle(x, y, color));
+          particles.push(new Particle(x, y, `rgb(${r},${g},${b})`));
         }
       }
     }
 
     loadingText.style.display = 'none';
     canvas.style.display = 'block';
-    animate();
+    animate(img.width, img.height);
   }
 
-  function animate() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  function animate(w, h) {
+    ctx.clearRect(0, 0, w, h);
     for (const p of particles) {
       p.update();
       p.draw();
     }
-    requestAnimationFrame(animate);
+    requestAnimationFrame(() => animate(w, h));
   }
 
   canvas.addEventListener('mousemove', (e) => {
@@ -165,7 +154,6 @@
     mouse.y = -9999;
   });
 
-  // touch support
   canvas.addEventListener('touchmove', (e) => {
     e.preventDefault();
     const rect = canvas.getBoundingClientRect();
